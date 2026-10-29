@@ -8,6 +8,11 @@ export const MIN_DAYS_SINCE_CONTACT = 7;
 // Assumption: a member with no contact record is scored as if their last
 // contact was 28 days ago (+4.0), so they rank high without beating everyone.
 export const NO_CONTACT_ASSUMED_DAYS = 28;
+// Assumption: coordinators work in Israel, so "today" and holidays are
+// calendar dates in Israel time, not UTC.
+export const TIME_ZONE = "Asia/Jerusalem";
+// Outcomes that mean the last contact did not go well (see getFollowUps).
+const FOLLOW_UP_OUTCOMES = ["escalate", "no_answer"];
 const MORNING_MIN_AGE = 80;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -19,14 +24,27 @@ export type DueMember = {
   priorityScore: number; // rounded to 1 decimal
   recommendedWindow: Window;
   preferredChannel: string;
-  daysSinceLastContact: number | null; // whole days, null = no record
+  daysSinceLastContact: number | null; // calendar days, null = no record
   lastOutcome: string | null;
   reasons: string[]; // short tags for the "Why" column
 };
 
-// "YYYY-MM-DD" of a date in UTC, the same format as holidays.json.
+export type FollowUpMember = {
+  memberId: number;
+  fullName: string;
+  recommendedWindow: Window;
+  preferredChannel: string;
+  daysSinceLastContact: number;
+  lastContactDate: string; // "YYYY-MM-DD", Israel time
+  lastOutcome: string; // "escalate" | "no_answer"
+  reasons: string[];
+};
+
+// "YYYY-MM-DD" of a moment as a calendar date in Israel,
+// the same format as holidays.json. ("en-CA" formats dates as YYYY-MM-DD.)
+const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE });
 export function toDateKey(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return dateKeyFormatter.format(date);
 }
 
 export function isHoliday(today: Date, holidays: string[]): boolean {
@@ -37,10 +55,19 @@ export function hasValidChannel(member: Member): boolean {
   return VALID_CHANNELS.includes(member.preferredChannel);
 }
 
-// Fractional days between the last contact and "today".
+// Fractional days between two moments. Used for the score's days/7 bonus.
 // Negative if the contact is after "today" (possible with a past ?date=).
 export function daysBetween(from: Date, to: Date): number {
   return (to.getTime() - from.getTime()) / MS_PER_DAY;
+}
+
+// Whole calendar days between two moments, ignoring the time of day:
+// contacted on 30 Oct (any hour) -> 6 Nov is 7 days. Used for "who is due",
+// because that is how a coordinator counts "a week ago".
+export function calendarDaysBetween(from: Date, to: Date): number {
+  const fromDay = Date.parse(toDateKey(from));
+  const toDay = Date.parse(toDateKey(to));
+  return Math.round((toDay - fromDay) / MS_PER_DAY);
 }
 
 export function recommendedWindow(age: number): Window {
@@ -62,11 +89,11 @@ export function priorityScore(
   return score;
 }
 
-// Short, human tags explaining why a member is on the list.
+// Short, human tags explaining why a member is on a list.
 function reasonTags(
   member: Member,
   lastContact: LastContact | undefined,
-  daysSince: number | null,
+  calendarDays: number | null,
 ): string[] {
   const tags: string[] = [];
   if (member.riskFlags.includes("recent_discharge")) tags.push("Discharged");
@@ -75,7 +102,8 @@ function reasonTags(
   if (lastContact?.outcome === "no_answer") tags.push("No answer");
   // Not scored by the spec, but a coordinator should see it.
   if (lastContact?.outcome === "escalate") tags.push("Escalated");
-  tags.push(daysSince === null ? "No contact yet" : `${Math.floor(daysSince)} days`);
+  if (calendarDays === null) tags.push("No contact yet");
+  else tags.push(calendarDays === 1 ? "1 day" : `${calendarDays} days`);
   return tags;
 }
 
@@ -91,7 +119,8 @@ function latestContactByMember(contacts: LastContact[]): Map<number, LastContact
   return latest;
 }
 
-// Main entry point: who needs a check-in on `today`, highest priority first.
+// Main entry point (the spec list): who needs a check-in on `today`,
+// highest priority first.
 export function getDueMembers(data: CheckinData, today: Date, top?: number): DueMember[] {
   if (isHoliday(today, data.holidays)) return [];
 
@@ -103,13 +132,16 @@ export function getDueMembers(data: CheckinData, today: Date, top?: number): Due
     if (!hasValidChannel(member)) continue;
 
     const lastContact = contacts.get(member.memberId);
-    const daysSince = lastContact ? daysBetween(lastContact.lastContactUtc, today) : null;
+    const calendarDays = lastContact
+      ? calendarDaysBetween(lastContact.lastContactUtc, today)
+      : null;
 
-    // No record -> due. Otherwise due only after 7+ days
+    // No record -> due. Otherwise due only after 7+ calendar days
     // (this also skips contacts dated after "today").
-    if (daysSince !== null && daysSince < MIN_DAYS_SINCE_CONTACT) continue;
+    if (calendarDays !== null && calendarDays < MIN_DAYS_SINCE_CONTACT) continue;
 
-    const rawScore = priorityScore(member, lastContact, daysSince);
+    const exactDays = lastContact ? daysBetween(lastContact.lastContactUtc, today) : null;
+    const rawScore = priorityScore(member, lastContact, exactDays);
     due.push({
       rawScore,
       member: {
@@ -118,9 +150,9 @@ export function getDueMembers(data: CheckinData, today: Date, top?: number): Due
         priorityScore: Math.round(rawScore * 10) / 10,
         recommendedWindow: recommendedWindow(member.age),
         preferredChannel: member.preferredChannel,
-        daysSinceLastContact: daysSince === null ? null : Math.floor(daysSince),
+        daysSinceLastContact: calendarDays,
         lastOutcome: lastContact?.outcome ?? null,
-        reasons: reasonTags(member, lastContact, daysSince),
+        reasons: reasonTags(member, lastContact, calendarDays),
       },
     });
   }
@@ -130,4 +162,46 @@ export function getDueMembers(data: CheckinData, today: Date, top?: number): Due
 
   const sorted = due.map((entry) => entry.member);
   return top === undefined ? sorted : sorted.slice(0, top);
+}
+
+// Extra (not in the spec): members the 7-day rule hides even though their
+// last contact went badly (escalated or no answer in the last 7 days).
+// Kept separate so the spec list and score stay exactly as defined.
+// Order: escalations first, then whoever has waited longest.
+export function getFollowUps(data: CheckinData, today: Date): FollowUpMember[] {
+  if (isHoliday(today, data.holidays)) return [];
+
+  const contacts = latestContactByMember(data.lastContacts);
+  const followUps: FollowUpMember[] = [];
+
+  for (const member of data.members) {
+    if (!hasValidChannel(member)) continue;
+
+    const lastContact = contacts.get(member.memberId);
+    if (!lastContact || !FOLLOW_UP_OUTCOMES.includes(lastContact.outcome)) continue;
+
+    const calendarDays = calendarDaysBetween(lastContact.lastContactUtc, today);
+    // 7+ days -> already on the spec list; negative -> contact is after "today".
+    if (calendarDays < 0 || calendarDays >= MIN_DAYS_SINCE_CONTACT) continue;
+
+    followUps.push({
+      memberId: member.memberId,
+      fullName: member.fullName,
+      recommendedWindow: recommendedWindow(member.age),
+      preferredChannel: member.preferredChannel,
+      daysSinceLastContact: calendarDays,
+      lastContactDate: toDateKey(lastContact.lastContactUtc),
+      lastOutcome: lastContact.outcome,
+      reasons: reasonTags(member, lastContact, calendarDays),
+    });
+  }
+
+  const outcomeRank = (outcome: string) => (outcome === "escalate" ? 0 : 1);
+  followUps.sort(
+    (a, b) =>
+      outcomeRank(a.lastOutcome) - outcomeRank(b.lastOutcome) ||
+      b.daysSinceLastContact - a.daysSinceLastContact ||
+      a.memberId - b.memberId,
+  );
+  return followUps;
 }
