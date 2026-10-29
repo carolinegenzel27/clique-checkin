@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { TIME_ZONE } from "@/lib/checkin";
 import { loadData } from "@/lib/data";
 import { buildDueResponse, parseDueQuery, type DueResponse } from "@/lib/due-api";
 
@@ -37,12 +36,11 @@ async function CheckinView({ searchParams }: { searchParams: SearchParams }) {
     if (typeof value === "string" && value !== "") params.set(key, value);
   }
 
-  const now = new Date();
-  const parsed = parseDueQuery(params, now);
+  const parsed = parseDueQuery(params, new Date());
   if (!parsed.ok) {
     return (
       <>
-        <Welcome now={now} date={null} />
+        <Header />
         <Controls date="" top="" />
         <Notice emoji="⚠️" tone="error" title="That link doesn't look right">
           {parsed.error}
@@ -55,7 +53,7 @@ async function CheckinView({ searchParams }: { searchParams: SearchParams }) {
 
   return (
     <>
-      <Welcome now={now} date={response.date} />
+      <Header />
       <Controls date={response.date} top={params.get("top") ?? ""} />
 
       {response.is_holiday ? (
@@ -101,21 +99,11 @@ async function CheckinView({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
-// Friendly header: greeting by the coordinator's local time (Israel) and the date being shown.
-function Welcome({ now, date }: { now: Date; date: string | null }) {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: TIME_ZONE }).format(now),
-  );
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-
+function Header() {
   return (
-    <header className="rounded-3xl bg-gradient-to-br from-teal-600 to-emerald-500 px-6 py-8 text-white shadow-sm sm:px-8">
-      <p className="text-sm font-medium text-teal-50/90">Clique · Community check-ins</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting} 👋</h1>
-      <p className="mt-2 max-w-xl text-teal-50">
-        Here&apos;s who would love to hear from you
-        {date ? ` on ${formatDate(date, true)}` : " today"}. A short call can make someone&apos;s day.
-      </p>
+    <header className="mb-6">
+      <p className="text-sm font-medium text-teal-700">Clique</p>
+      <h1 className="mt-1 text-3xl font-semibold tracking-tight">Community check-ins</h1>
     </header>
   );
 }
@@ -123,7 +111,7 @@ function Welcome({ now, date }: { now: Date; date: string | null }) {
 // Plain HTML GET form: changing the date or limit just reloads the page with new query params.
 function Controls({ date, top }: { date: string; top: string }) {
   return (
-    <form className="-mt-5 mx-3 flex flex-wrap items-end gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:mx-6">
+    <form className="flex flex-wrap items-end gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
       <label className="flex flex-col gap-1 text-sm font-medium text-stone-600">
         Date
         <input
@@ -167,14 +155,9 @@ function Summary({ response }: { response: DueResponse }) {
   const cards = [
     { emoji: "💛", value: response.total_due, label: "due for a check-in" },
     { emoji: "🔁", value: response.follow_up.length, label: "worth a follow-up" },
-    {
-      emoji: "☀️",
-      value: response.due.filter((m) => m.recommended_window === "morning").length,
-      label: "morning calls in this list",
-    },
   ];
   return (
-    <div className="mt-8 grid gap-3 sm:grid-cols-3">
+    <div className="mt-8 grid gap-3 sm:grid-cols-2">
       {cards.map((card) => (
         <div key={card.label} className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
           <div className="text-2xl">{card.emoji}</div>
@@ -335,13 +318,11 @@ function channelLabel(channel: string): string {
   return { call: "📞 Call", sms: "💬 SMS", whatsapp: "🟢 WhatsApp" }[channel] ?? channel;
 }
 
-// "2025-11-06" -> "6 Nov 2025", or "Thursday, 6 November 2025" when long.
-// Read as UTC so the day never shifts.
-function formatDate(dateKey: string, long = false): string {
+// "2025-11-06" -> "6 Nov 2025" (read as UTC so the day never shifts)
+function formatDate(dateKey: string): string {
   return new Date(dateKey).toLocaleDateString("en-GB", {
-    weekday: long ? "long" : undefined,
     day: "numeric",
-    month: long ? "long" : "short",
+    month: "short",
     year: "numeric",
     timeZone: "UTC",
   });

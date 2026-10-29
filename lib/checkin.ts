@@ -169,7 +169,7 @@ export function getDueMembers(data: CheckinData, today: Date, top?: number): Due
 // last contact went badly (escalated or no answer in the last 7 days).
 // Kept separate so the spec list stays exactly as defined. Scored with the
 // same formula so both lists read the same.
-// Order: escalations first, then by score.
+// Order: by score, like the spec list.
 export function getFollowUps(data: CheckinData, today: Date): FollowUpMember[] {
   if (isHoliday(today, data.holidays)) return [];
 
@@ -207,12 +207,6 @@ export function getFollowUps(data: CheckinData, today: Date): FollowUpMember[] {
     });
   }
 
-  const outcomeRank = (outcome: string) => (outcome === "escalate" ? 0 : 1);
-  followUps.sort(
-    (a, b) =>
-      outcomeRank(a.member.lastOutcome) - outcomeRank(b.member.lastOutcome) ||
-      b.rawScore - a.rawScore ||
-      a.member.memberId - b.member.memberId,
-  );
+  followUps.sort((a, b) => b.rawScore - a.rawScore || a.member.memberId - b.member.memberId);
   return followUps.map((entry) => entry.member);
 }

@@ -146,21 +146,21 @@ describe("priority score and order", () => {
 });
 
 describe("follow-ups (escalated or no answer in the last 7 days)", () => {
-  it("lists recent bad outcomes, escalations first, and ignores ok", () => {
+  it("lists recent bad outcomes and ignores ok", () => {
     const d = data(
       [member({ memberId: 1 }), member({ memberId: 2 }), member({ memberId: 3 })],
       [
-        contact(1, "2025-11-04T10:00:00Z", "no_answer"),
+        contact(1, "2025-11-04T10:00:00Z", "no_answer"), // +1 for no_answer -> higher score
         contact(2, "2025-11-05T10:00:00Z", "escalate"),
         contact(3, "2025-11-04T10:00:00Z", "ok"),
       ],
     );
-    expect(ids(getFollowUps(d, TODAY))).toEqual([2, 1]);
+    expect(ids(getFollowUps(d, TODAY))).toEqual([1, 2]);
     // They are not on the spec list yet (contacted less than 7 days ago).
     expect(getDueMembers(d, TODAY)).toEqual([]);
   });
 
-  it("scores follow-ups with the spec formula and sorts by score within each outcome", () => {
+  it("scores follow-ups with the spec formula and sorts by score", () => {
     const d = data(
       [
         member({ memberId: 1 }),
