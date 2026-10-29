@@ -176,6 +176,12 @@ describe("follow-ups (escalated or no answer in the last 7 days)", () => {
     expect(followUps.map((m) => m.priorityScore)).toEqual([6.3, 0.3]);
   });
 
+  it("never gives a negative day bonus for a contact later the same day", () => {
+    // ?date=2025-11-06 means midnight; the call was at 10:00 that day.
+    const d = data([member({ memberId: 1 })], [contact(1, "2025-11-06T10:00:00Z", "no_answer")]);
+    expect(getFollowUps(d, new Date("2025-11-06"))[0].priorityScore).toBe(1); // just +1 for no_answer
+  });
+
   it("does not repeat members who are already due", () => {
     const d = data([member({ memberId: 1 })], [contact(1, "2025-10-20T10:00:00Z", "escalate")]);
     expect(getFollowUps(d, TODAY)).toEqual([]);

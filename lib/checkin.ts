@@ -86,7 +86,9 @@ export function priorityScore(
   if (member.riskFlags.includes("lives_alone")) score += 2;
   if (member.age >= 80) score += 1;
   if (lastContact?.outcome === "no_answer") score += 1;
-  score += (daysSince ?? NO_CONTACT_ASSUMED_DAYS) / 7;
+  // Never negative: with ?date=, "today" starts at midnight, so a contact
+  // later that same day would otherwise give a small negative gap.
+  score += Math.max(0, daysSince ?? NO_CONTACT_ASSUMED_DAYS) / 7;
   return score;
 }
 

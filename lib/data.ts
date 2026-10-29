@@ -56,11 +56,17 @@ export function parseMembers(text: string): Member[] {
 }
 
 export function parseLastContacts(text: string): LastContact[] {
-  return parseCsv(text).map((row) => ({
-    memberId: Number(row.member_id),
-    lastContactUtc: new Date(row.last_contact_utc),
-    outcome: row.outcome,
-  }));
+  return (
+    parseCsv(text)
+      .map((row) => ({
+        memberId: Number(row.member_id),
+        lastContactUtc: new Date(row.last_contact_utc),
+        outcome: row.outcome,
+      }))
+      // A row with an unreadable date is skipped, so that member counts as
+      // "no contact record" instead of one bad row breaking the whole list.
+      .filter((contact) => !Number.isNaN(contact.lastContactUtc.getTime()))
+  );
 }
 
 // Reads all three files from /data. Server-side only (uses the file system).

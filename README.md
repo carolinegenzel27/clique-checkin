@@ -65,7 +65,7 @@ Example response (shortened):
 npm test
 ```
 
-34 tests cover the rules (holiday, missing contact, the 7-day boundary, scoring, sorting, rounding, ties), the follow-up list, data parsing, API input validation, the check-in log, and the expected top 5 for the real data on 6 Nov 2025.
+36 tests cover the rules (holiday, missing contact, the 7-day boundary, scoring, sorting, rounding, ties), the follow-up list, data parsing (including a broken date), API input validation, the check-in log, and the expected top 5 for the real data on 6 Nov 2025.
 
 ## How it works
 
@@ -95,6 +95,8 @@ Where the assignment left something open, I made these choices:
 8. **Scores are rounded to 1 decimal** for display, like the example output. Sorting uses the exact score, and ties go to the lower `member_id`, so the order is always the same.
 9. **`top` is optional.** Without it, everyone due is returned.
 10. **Names are not unique** in the data (for example, there are two "Sarah Levi"s), so everything uses `member_id`, and the page shows the ID under each name.
+11. **A contact row with an unreadable date is skipped**, so that member counts as having no contact record. One bad row shouldn't break the whole list.
+12. **The day bonus is never negative.** With `?date=`, "today" starts at midnight, so a call later that same day would otherwise give a small negative gap. It counts as 0 days instead.
 
 ### What I added beyond the spec
 

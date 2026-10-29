@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadData, parseMembers } from "./data";
+import { loadData, parseLastContacts, parseMembers } from "./data";
 
 describe("data loading", () => {
   it("parses risk flags, including an empty value and Windows line endings", () => {
@@ -17,6 +17,14 @@ describe("data loading", () => {
       },
       { memberId: 2, fullName: "Joseph Levi", age: 76, preferredChannel: "sms", riskFlags: [] },
     ]);
+  });
+
+  it("skips a contact row with an unreadable date instead of crashing", () => {
+    const csv =
+      "member_id,last_contact_utc,outcome\n" +
+      "1,2025-10-30T08:00:00Z,ok\n" +
+      "2,oops,no_answer\n";
+    expect(parseLastContacts(csv).map((c) => c.memberId)).toEqual([1]);
   });
 
   it("loads the real assignment files", () => {
