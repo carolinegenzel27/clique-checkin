@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getDueMembers, getFollowUps, isHoliday, recommendedWindow } from "./checkin";
-import type { CheckinData, LastContact, Member } from "./data";
+import { loadData, type CheckinData, type LastContact, type Member } from "./data";
 
 // Small hand-made fixtures, so each test shows exactly the case it checks.
 
@@ -56,6 +56,17 @@ describe("who is due", () => {
     expect(ids(getDueMembers(d, new Date("2025-11-06T00:00:00Z")))).toEqual([1]);
   });
 
+  it("counts calendar days in Israel time, not UTC", () => {
+    const d = data(
+      [member({ memberId: 1 }), member({ memberId: 2 })],
+      [
+        contact(1, "2025-10-30T21:30:00Z"), // 23:30 on 30 Oct in Israel -> 7 days
+        contact(2, "2025-10-30T22:30:00Z"), // 00:30 on 31 Oct in Israel -> 6 days
+      ],
+    );
+    expect(ids(getDueMembers(d, TODAY))).toEqual([1]);
+  });
+
   it("skips members without a valid preferred channel", () => {
     const d = data(
       [
@@ -101,6 +112,31 @@ describe("priority score and order", () => {
     );
     expect(ids(getDueMembers(d, TODAY))).toEqual([2, 3, 1]);
     expect(ids(getDueMembers(d, TODAY, 2))).toEqual([2, 3]);
+  });
+
+  it("rounds the score to 1 decimal", () => {
+    const d = data([member({ memberId: 1 })], [contact(1, "2025-10-27T10:00:00Z")]);
+    // 10 days / 7 = 1.428... -> 1.4
+    expect(getDueMembers(d, TODAY)[0].priorityScore).toBe(1.4);
+  });
+
+  it("breaks score ties by member_id", () => {
+    const d = data(
+      [member({ memberId: 5 }), member({ memberId: 3 })],
+      [contact(5, "2025-10-23T10:00:00Z"), contact(3, "2025-10-23T10:00:00Z")],
+    );
+    expect(ids(getDueMembers(d, TODAY))).toEqual([3, 5]);
+  });
+
+  it("gives the expected top 5 for the real data on 6 Nov 2025", () => {
+    const top5 = getDueMembers(loadData(), new Date("2025-11-06"), 5);
+    expect(top5.map((m) => [m.memberId, m.priorityScore])).toEqual([
+      [2, 8.6], // Isaac Regev
+      [6, 7.9], // Sarah Israel
+      [28, 7.8], // Ruth Levi
+      [23, 7.7], // Daniel Adler
+      [8, 7.4], // Rachel Baruch
+    ]);
   });
 
   it("recommends morning from age 80", () => {
