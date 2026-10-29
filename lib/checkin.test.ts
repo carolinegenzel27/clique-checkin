@@ -160,6 +160,22 @@ describe("follow-ups (escalated or no answer in the last 7 days)", () => {
     expect(getDueMembers(d, TODAY)).toEqual([]);
   });
 
+  it("scores follow-ups with the spec formula and sorts by score within each outcome", () => {
+    const d = data(
+      [
+        member({ memberId: 1 }),
+        member({ memberId: 2, age: 85, riskFlags: ["recent_discharge", "lives_alone"] }),
+      ],
+      [
+        contact(1, "2025-11-04T10:00:00Z", "escalate"), // 2 days -> 2/7
+        contact(2, "2025-11-04T10:00:00Z", "escalate"), // 3 + 2 + 1 + 2/7
+      ],
+    );
+    const followUps = getFollowUps(d, TODAY);
+    expect(ids(followUps)).toEqual([2, 1]);
+    expect(followUps.map((m) => m.priorityScore)).toEqual([6.3, 0.3]);
+  });
+
   it("does not repeat members who are already due", () => {
     const d = data([member({ memberId: 1 })], [contact(1, "2025-10-20T10:00:00Z", "escalate")]);
     expect(getFollowUps(d, TODAY)).toEqual([]);

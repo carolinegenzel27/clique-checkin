@@ -62,6 +62,7 @@ function toFollowUpJson(m: FollowUpMember) {
   return {
     member_id: m.memberId,
     full_name: m.fullName,
+    priority_score: m.priorityScore,
     recommended_window: m.recommendedWindow,
     preferred_channel: m.preferredChannel,
     days_since_last_contact: m.daysSinceLastContact,

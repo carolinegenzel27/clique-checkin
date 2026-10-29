@@ -32,6 +32,7 @@ export type DueMember = {
 export type FollowUpMember = {
   memberId: number;
   fullName: string;
+  priorityScore: number; // same spec formula, rounded to 1 decimal
   recommendedWindow: Window;
   preferredChannel: string;
   daysSinceLastContact: number;
@@ -166,13 +167,14 @@ export function getDueMembers(data: CheckinData, today: Date, top?: number): Due
 
 // Extra (not in the spec): members the 7-day rule hides even though their
 // last contact went badly (escalated or no answer in the last 7 days).
-// Kept separate so the spec list and score stay exactly as defined.
-// Order: escalations first, then whoever has waited longest.
+// Kept separate so the spec list stays exactly as defined. Scored with the
+// same formula so both lists read the same.
+// Order: escalations first, then by score.
 export function getFollowUps(data: CheckinData, today: Date): FollowUpMember[] {
   if (isHoliday(today, data.holidays)) return [];
 
   const contacts = latestContactByMember(data.lastContacts);
-  const followUps: FollowUpMember[] = [];
+  const followUps: { member: FollowUpMember; rawScore: number }[] = [];
 
   for (const member of data.members) {
     if (!hasValidChannel(member)) continue;
@@ -184,24 +186,33 @@ export function getFollowUps(data: CheckinData, today: Date): FollowUpMember[] {
     // 7+ days -> already on the spec list; negative -> contact is after "today".
     if (calendarDays < 0 || calendarDays >= MIN_DAYS_SINCE_CONTACT) continue;
 
+    const rawScore = priorityScore(
+      member,
+      lastContact,
+      daysBetween(lastContact.lastContactUtc, today),
+    );
     followUps.push({
-      memberId: member.memberId,
-      fullName: member.fullName,
-      recommendedWindow: recommendedWindow(member.age),
-      preferredChannel: member.preferredChannel,
-      daysSinceLastContact: calendarDays,
-      lastContactDate: toDateKey(lastContact.lastContactUtc),
-      lastOutcome: lastContact.outcome,
-      reasons: reasonTags(member, lastContact, calendarDays),
+      rawScore,
+      member: {
+        memberId: member.memberId,
+        fullName: member.fullName,
+        priorityScore: Math.round(rawScore * 10) / 10,
+        recommendedWindow: recommendedWindow(member.age),
+        preferredChannel: member.preferredChannel,
+        daysSinceLastContact: calendarDays,
+        lastContactDate: toDateKey(lastContact.lastContactUtc),
+        lastOutcome: lastContact.outcome,
+        reasons: reasonTags(member, lastContact, calendarDays),
+      },
     });
   }
 
   const outcomeRank = (outcome: string) => (outcome === "escalate" ? 0 : 1);
   followUps.sort(
     (a, b) =>
-      outcomeRank(a.lastOutcome) - outcomeRank(b.lastOutcome) ||
-      b.daysSinceLastContact - a.daysSinceLastContact ||
-      a.memberId - b.memberId,
+      outcomeRank(a.member.lastOutcome) - outcomeRank(b.member.lastOutcome) ||
+      b.rawScore - a.rawScore ||
+      a.member.memberId - b.member.memberId,
   );
-  return followUps;
+  return followUps.map((entry) => entry.member);
 }
