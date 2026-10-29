@@ -24,7 +24,9 @@ export type CheckinData = {
   holidays: string[]; // "YYYY-MM-DD"
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// turbopackIgnore: the folder is shipped via outputFileTracingIncludes in next.config.ts,
+// so the bundler should not try to trace this runtime path.
+const DATA_DIR = path.join(/* turbopackIgnore: true */ process.cwd(), "data");
 
 // Minimal CSV parser: the files have no quoted fields or commas inside values,
 // so splitting on "," is enough. Returns one object per row, keyed by header.
